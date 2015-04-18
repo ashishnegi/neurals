@@ -35,7 +35,7 @@
                                    valy))))))
 
 
-(defn derivative-forward 
+(defn- derivative-forward 
   "Derivative of the forward-multiply function at values x and y 
   with change chg-x and chg-y"
   [x y chg-x chg-y h]
