@@ -132,7 +132,7 @@ derivative for generating the backward pull."))
           val-a (forward input-a)
           val-b (forward input-b)]
       (merge-with + (backward input-a (* val-b back-grad))
-                    (backward input-b (* val-a back-grad))))))
+                  (backward input-b (* val-a back-grad))))))
 
 ;; AddGate add values of two  inputs.
 (defrecord AddGate [input-a input-b]
@@ -142,17 +142,17 @@ derivative for generating the backward pull."))
 
   (backward [this back-grad]
     (let [input-a (:input-a this)
-          input-b (:input-b this)
-          val-a (forward input-a)
-          val-b (forward input-b)]
+          input-b (:input-b this)]
       (merge-with + (backward input-a (* 1.0 back-grad))
-                    (backward input-b (* 1.0 back-grad))))))
+                  (backward input-b (* 1.0 back-grad))))))
 
 
-(defn sig [x]
+(defn sig 
+  "Sigmoid function : f(x) = 1/(1 + exp(-x))"
+  [x]
   (/ 1 (+ 1 (Math/pow Math/E (- x)))))
 
-;; SigmoidGate is the f(x) = 1/(1 + exp(-x)).
+;; SigmoidGate applies sig on input.
 (defrecord SigmoidGate [gate]
   GateOps
   (forward [this]
@@ -187,6 +187,4 @@ derivative for generating the backward pull."))
 ;; (clojure.pprint/pprint (backward sigaxcby 1.0)
 
 ;; --------------- *** ---------------------------
-
-
 
