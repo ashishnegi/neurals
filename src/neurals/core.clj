@@ -183,4 +183,10 @@ derivative for generating the backward pull."))
 (def axcby (->AddGate axc by))
 (def sigaxcby (->SigmoidGate axcby ))
 
+;; (forward sigaxcby)
+;; (clojure.pprint/pprint (backward sigaxcby 1.0)
+
+;; --------------- *** ---------------------------
+
+
 
