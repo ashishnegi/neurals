@@ -52,7 +52,7 @@
     (-> 
      (merge-with + val-a-map val-b-map)
      (assoc   id (+ (val-a-map (:id gate-a)) 
-                            (val-b-map (:id gate-b)))))))
+                    (val-b-map (:id gate-b)))))))
 
 (defmethod forward :mul-gate
   [this input-values]

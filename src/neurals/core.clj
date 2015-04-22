@@ -92,9 +92,9 @@
 
 ;; ----- Gates -----
 
-;; A single unit has forward value and backward gradient.
+;; A single unit is the input-to-the-circuit.
 (defrecord Unit 
-    [value gradient name]
+    [id name]
   Object
   (toString [_]
     (str name " : ")))
@@ -106,45 +106,67 @@
 (defprotocol GateOps
   "Basic Gate Operations: Forward and Backward are two 
   protocol-operations need to be supported by  each gate."
-  (forward [this] "Give the output-value from its input - used in 
+  (forward [this _] "Give the output-value from input gate(s) used in 
 going forward the circuit. ")
-  (backward [this back-grad] "Gives the gradient to its input -
-argument has back-grad which is gradient from its output. Backward calcuates the
-derivative for generating the backward pull."))
+  (backward [this back-grad init-values] "Gives the gradient to its 
+input - argument has back-grad : which is gradient from its output. 
+input-gates : stores the input given to the circuit.
+Backward calcuates the derivative for generating the backward pull."))
 
-;; Unit is basic unit of cirtuit and hence simple operations.
+;; Unit is mouth of cirtuit and hence simple operations.
 (extend-protocol GateOps
   Unit
-  (forward [this]
-    (:value this))
-  (backward [this back-grad]
-    {this back-grad}))
+  (forward [this input-values]
+    (let [id (:id this)]
+      {id (input-values id)}))
+  (backward [this back-grad init-values]
+    {(:id this) back-grad}))
 
 ;; MultiplyGate gets two inputs and * their values going forward.
-(defrecord MultiplyGate [input-a input-b]
+(defrecord MultiplyGate [id input-a input-b]
   GateOps
-  (forward [this]
-    (* (forward (:input-a this)) (forward (:input-b this))))
+  (forward [this input-values]
+      (let [id (:id this)
+        input-a (:input-a this)
+        input-b (:input-b this)
+        val-a-map (forward input-a input-values)
+        val-b-map (forward input-b input-values)]
+    (-> 
+     (merge-with + val-a-map val-b-map)
+     (assoc   id (* (val-a-map (:id input-a)) 
+                    (val-b-map (:id input-b)))))))
 
-  (backward [this back-grad]
+  (backward [this back-grad init-values]
     (let [input-a (:input-a this)
           input-b (:input-b this)
-          val-a (forward input-a)
-          val-b (forward input-b)]
-      (merge-with + (backward input-a (* val-b back-grad))
-                  (backward input-b (* val-a back-grad))))))
+          val-a (init-values (:id input-a))
+          val-b (init-values (:id input-b))]
+      (-> 
+       (merge-with + (backward input-a (* val-b back-grad) init-values)
+                   (backward input-b (* val-a back-grad) init-values))
+       (assoc  (:id this) back-grad)))))
 
 ;; AddGate add values of two  inputs.
-(defrecord AddGate [input-a input-b]
+(defrecord AddGate [id input-a input-b]
   GateOps
-  (forward [this]
-    (+ (forward (:input-a this)) (forward (:input-b this))))
+  (forward [this input-values]
+      (let [id (:id this)
+        input-a (:input-a this)
+        input-b (:input-b this)
+        val-a-map (forward input-a input-values)
+        val-b-map (forward input-b input-values)]
+    (-> 
+     (merge-with + val-a-map val-b-map)
+     (assoc   id (+ (val-a-map (:id input-a)) 
+                    (val-b-map (:id input-b)))))))
 
-  (backward [this back-grad]
+  (backward [this back-grad init-values]
     (let [input-a (:input-a this)
           input-b (:input-b this)]
-      (merge-with + (backward input-a (* 1.0 back-grad))
-                  (backward input-b (* 1.0 back-grad))))))
+      (-> 
+       (merge-with + (backward input-a (* 1.0 back-grad) init-values)
+                   (backward input-b (* 1.0 back-grad) init-values))
+       (assoc   (:id this) back-grad)))))
 
 
 (defn sig 
@@ -153,16 +175,23 @@ derivative for generating the backward pull."))
   (/ 1 (+ 1 (Math/pow Math/E (- x)))))
 
 ;; SigmoidGate applies sig on input.
-(defrecord SigmoidGate [gate]
+(defrecord SigmoidGate [id gate]
   GateOps
-  (forward [this]
-    (sig (forward (:gate this))))
+  (forward [this input-values]
+      (let [id (:id this)
+        input-a (:gate this)
+        val-a-map (forward input-a input-values)]
+    (-> 
+     val-a-map
+     (assoc   id (sig (val-a-map (:id input-a)))))))
 
-  (backward [this back-grad]
-    (let [s (forward this) 
+  (backward [this back-grad init-values]
+    (let [s (init-values (:id this))
           ;; s is (sig input) i.e. output
           ds (* s (- 1 s) back-grad)]
-      (backward (:gate this) ds))))
+      (->
+       (backward (:gate this) ds init-values)
+       (assoc (:id this) back-grad)))))
 
 
 (defmacro defunit 
@@ -171,20 +200,27 @@ derivative for generating the backward pull."))
   `(def ~var-name (~@body (name '~var-name))))
 
 ;; neural network : f(x,y) = sig(a*x + b*y + c)
-(defunit a (->Unit 1.0 0.0))
-(defunit b (->Unit 2.0 0.0))
-(defunit c (->Unit -3.0 0.0))
-(defunit x (->Unit -1.0 0.0))
-(defunit y (->Unit 3.0 0.0))
+(defunit a (->Unit 0))
+(defunit b (->Unit 1))
+(defunit c (->Unit 2))
+(defunit x (->Unit 3))
+(defunit y (->Unit 4))
 
-(def ax (->MultiplyGate a x))
-(def by (->MultiplyGate b y))
-(def axc (->AddGate ax c))
-(def axcby (->AddGate axc by))
-(def sigaxcby (->SigmoidGate axcby ))
+(def ax (->MultiplyGate 5 a x))
+(def by (->MultiplyGate 6 b y))
+(def axc (->AddGate 7 ax c))
+(def axcby (->AddGate 8 axc by))
+(def sigaxcby (->SigmoidGate 9 axcby ))
 
-;; (forward sigaxcby)
-;; (clojure.pprint/pprint (backward sigaxcby 1.0)
+(clojure.pprint/pprint 
+ (backward sigaxcby 1.0 
+           ;; forward takes a map { unit-id  input-to-unit }
+           (forward sigaxcby {0 1.0
+                              1 2.0
+                              2 -3.0
+                              3 -1.0
+                              4 3.0
+                              })))
 
 ;; --------------- *** ---------------------------
 
