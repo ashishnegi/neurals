@@ -138,8 +138,6 @@
         input (:input this)
         edge-a (:edge-a input)
         edge-b (:edge-b input)
-        id-a (:id edge-a)
-        id-b (:id edge-b)
         pull-a (* 1.0 pull)
         pull-b (* 1.0 pull)]
     (-> 
@@ -167,7 +165,6 @@
   (let [id (:id this)
         input (:input this)
         edge-a (:edge-a input)
-        id-a (:id edge-a)
         val (values-edges id)
         pull-a (* val (- 1 val) pull)]
     (-> 
@@ -193,3 +190,6 @@
                              4 3.0
                              }))
 
+;; After doing it in the right way, i think that i could have achieved the 
+;; same with defprotocol too.
+;; But i like edges better than gates :)
