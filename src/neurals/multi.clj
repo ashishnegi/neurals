@@ -96,25 +96,3 @@
 ;; Plan 1 : DONE :)
 
 ;; ---------------- **** -----------------------------
-;; But the problem in both the plans are that
-;; their is no caching of data that is once calculated 
-;; is calculated again.. especially in `backward`.
-;; Can i do it the right way ?
-;; Is there functional way of doing things that would 
-;; generate the data on the go.. and i would start
-;; from that data and calculate the `backward` efficiently.
-;; Idea :
-;; It seems that i should put outputs from the forward pass,
-;; and pass it to the backward pass to process upon.
-;; This would solve the inefficient backward problem.
-
-;; Another problem :
-;; once i get the gradients from backward pass,
-;; how am i supposed to tweak the inputs, since they are immutable.
-;; This looks like a design flaw..
-
-;; Idea1: Make the circuit and capture the logic not the data.
-;; pass the data around in the circuit so that it can work even with
-;; new data.
-
-
