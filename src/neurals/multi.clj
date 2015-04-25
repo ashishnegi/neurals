@@ -65,7 +65,7 @@
     (-> 
      (merge-with + val-a-map val-b-map)
      (assoc   id (* (val-a-map (:id gate-a)) 
-                            (val-b-map (:id gate-b)))))))
+                    (val-b-map (:id gate-b)))))))
 
 (defmethod forward :sig-gate
   [this input-values]
@@ -198,17 +198,172 @@
 
 ;; should be able to make better-output 
 ;; with back-and-forward propagation.
-(> (make-better-value sigaxbyc initial-data) 
-   (forward sigaxbyc initial-data))
+(> (make-better-value sigaxcby initial-data) 
+   ((forward sigaxcby initial-data) (:id sigaxcby)))
 ;; ------------- *** ------------------------------
 
 ;; so Above in make-better-value, we changed [a,b,c] and [x,y].
 ;; where [a,b,c] were the coefficients and [x,y] were variables
 ;; in f(x) = a*x + b*y + c
 
+;; 1. Need to decide how to send new-val-calc operation to SVD.
+;;    Currently sending as separate argument.
+
+(declare find-pull)
+
 ;; In SVM, we only apply pull on [a,b,c].
 ;; Also, we apply additional pull on [a,b] to take it towards 0.
-(defn svm [neuron initial-data]
-  ())
+(defn svm-new-input 
+  "1. calculate forwad values on input.
+   2. test if matches the label or not ?
+   3.  if matches then pull is 0 -> no backward gradient.
+   4.  else pull is 1/-1 -> calculate backward gradients.
+   5. calculate new values with (input,backward-gradients,to-zero].
+   6. to calculate new-values, find units and call new-val-calc-ops."
+  ;; label -> {-1,1} only.
+  [neuron initial-data label new-val-calc-ops]
+  (loop [input initial-data]
+    (let [values (forward neuron input)
+          id-neuron (:id neuron)
+          val-neuron (values id-neuron)
+          pull (find-pull label val-neuron)
+          
+          all-gates (inputs neuron)
+          ;; ids of the input (mouth) of circuit.
+          input-ids (set (map #(:id %1) 
+                              (filter #(= :unit (:type %1)) all-gates)))
+          
+          gradients (if (zero? pull)
+                      ;; fill the gradients with 0s.
+                      ;; (reduce (fn [x y] (assoc x y 0)) {} input-ids)
+                      ;; otherwise calculate backward gradient.
+                      (backward neuron pull values)
+                      (backward neuron pull values))
+
+          ;; aaaa (clojure.pprint/pprint gradients)
+          ;; aaab (clojure.pprint/pprint pull)
+
+          ;; for each input-id, call its operation with
+          ;; val,gradient,to-zero value of it.
+          ;; [a,b] should work on them.
+          ;; [c] should not work on to-zero.
+          ;; [x] should just not change itself.
+          step 0.01
+          new-input (reduce 
+                     (fn [new-map input-id]
+                       (let [op (new-val-calc-ops input-id)
+                             gradient-of-id (gradients input-id)
+                             tozero-of-id (- (input input-id))
+                             input-of-id (input input-id)]
+                         (assoc new-map input-id 
+                                (+ input-of-id (op step
+                                                   gradient-of-id
+                                                   tozero-of-id)))))
+                     {}  input-ids)]
+      new-input)))
+
+(defunit a1 0) ;; 0 is the id for a
+(defunit b1 1)
+(defunit c1 2)
+(defunit x1 3)
+(defunit y1 4)
+
+(def ax1 (mul-gate a1 x1))
+(def by1 (mul-gate b1 y1))
+(def ax-plus-c (addition-gate ax1 c1))
+(def svm-neuron (addition-gate ax-plus-c by1))
+
+(defn cal-input-ab-op [step grad tozero]
+  (* step (+ grad tozero)))
+
+(defn cal-input-c-op [step grad tozero]
+  (* step grad))
+
+(defn cal-input-xy-op [step grad tozero]
+  0)
+
+(def cal-input-ops {0 cal-input-ab-op
+                    1 cal-input-ab-op
+                    2 cal-input-c-op
+                    3 cal-input-xy-op
+                    4 cal-input-xy-op
+                    })
+
+;; init-data only for [a,b,c].
+;; xy would be assoced later.
+(def svm-init-data {0 0
+                    1 0
+                    2 0
+                    })
+
+(def xy-label-s [[1.2 0.7 1]
+                 [-0.3 -0.5 -1]
+                 [3.0 0.1 1]
+                 [-0.1 -0.1 -1]
+                 [-1.0 1.1 -1]
+                 [2.1 -3 1]])
+
+;; Question : why not add regularization (tozero) to c ?
+;; Question : why not change [x,y] ? of-course no point, since
+;;            label depend upon them.
+
+(defn make-svm-input [coeff-ins xy-s]
+  (merge coeff-ins {3 (first xy-s)
+                    4 (second xy-s)
+                    :label (nth xy-s 2)}))
+
+(defn svm-learn [times]
+  (loop [t times 
+         input (map #(make-svm-input svm-init-data %1) xy-label-s)]
+    (if (< t 0)
+      input
+      (do
+        ;; (clojure.pprint/pprint input)
+        ;; (let [data (first input)
+        ;;       label ((forward svm-neuron data) 
+        ;;                           (:id svm-neuron))]
+        ;;   (clojure.pprint/pprint label)
+        ;;   (clojure.pprint/pprint (find-pull (:label data) label)))
+
+        (recur (dec t) 
+               (map (fn [data]
+                      (assoc (svm-new-input svm-neuron 
+                                            data
+                                            (:label data)
+                                            cal-input-ops)
+                             :label
+                             (:label data)))
+                    input))))))
+
+(defn svm-accuracy [times]
+  (->> (svm-learn times)
+       (map (fn [data] 
+              (let [values (forward svm-neuron data)
+                    id-neuron (:id svm-neuron)
+                    val-neuron (values id-neuron)
+                    label (:label data)]
+                (if (or  (and (> label 0)
+                              (> val-neuron 0))
+                         (and (< label 0)
+                              (< val-neuron 0)))
+                  {:data data
+                   :accurate true
+                   :label-val val-neuron}
+                  {:data data
+                   :accurate false
+                   :label-val val-neuron}))))
+       ((fn [learn]
+          (assoc {:success (count 
+                            (filter #(= (:accurate %1) true) learn))
+                  :total (count learn)}
+                 :learn learn)))))
 
 
+(defn find-pull [label val-neuron]
+  (if (and (< label 0)
+           (> val-neuron label))
+    -1.0
+    (if (and (> label 0)
+             (< val-neuron label))
+      1.0
+      0)))
