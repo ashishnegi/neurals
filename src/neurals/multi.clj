@@ -10,6 +10,7 @@
 
 (defmulti forward (fn [x _] (:type x)))
 (defmulti backward (fn [x _ _] (:type x)))
+(defmulti inputs (fn [x] (:type x)))
 
 (defmacro defunit [var-name id]
   `(def ~var-name {:type :unit 
@@ -77,7 +78,7 @@
 
 (defmethod backward :unit
   [this back-grad values-gates]
-  {this back-grad})
+  {(:id this) back-grad})
 
 (defmethod backward :add-gate
   [this back-grad values-gates]
@@ -107,6 +108,26 @@
      (backward gate-a (* s (- 1 s) back-grad) values-gates)
      (assoc  (:id this) back-grad))))
 
+(defmethod inputs :unit
+   [this]
+   [this])
+
+(defmethod inputs :add-gate
+  [this]
+  (conj (concat (inputs (:gate-a this))
+                (inputs (:gate-b this)))
+        this))
+
+(defmethod inputs :mul-gate
+  [this]
+  (conj (concat (inputs (:gate-a this))
+                (inputs (:gate-b this)))
+        this))
+
+(defmethod inputs :sig-gate
+  [this]
+  (conj (inputs (:gate-a this)) this))
+
 ;; f(x,y) = a*x + b*y + c
 
 (defunit a 0) ;; 0 is the id for a
@@ -121,18 +142,73 @@
 (def axcby (addition-gate axc by))
 (def sigaxcby (sig-gate axcby))
 
+(def initial-data  {0 1.0
+                    1 2.0
+                    2 -3.0
+                    3 -1.0
+                    4 3.0
+                    })
 
 (clojure.pprint/pprint 
  (backward sigaxcby 1.0 
            ;; forward takes a map { unit-id  input-to-unit }
-           (forward sigaxcby {0 1.0
-                              1 2.0
-                              2 -3.0
-                              3 -1.0
-                              4 3.0
-                              })))
+           (forward sigaxcby initial-data)))
 
 
 ;; Plan 1 : DONE :)
 
 ;; ---------------- **** -----------------------------
+(defn make-better-value [neuron, input]
+  (loop [input input]
+    (let [id-neuron (:id neuron)
+          aaaz (clojure.pprint/pprint input)
+          values (forward neuron input)
+          gradients (backward neuron 1.0 values)
+          step 0.01
+          all-gates (inputs neuron)
+          input-ids (set (map #(:id %1) 
+                              (filter #(= :unit (:type %1)) all-gates)))
+          ;; aaaa (clojure.pprint/pprint input-ids)
+          ;; aaad (clojure.pprint/pprint values)
+          ;; aaac (clojure.pprint/pprint gradients)
+          ;; create new input from gradients on units, and 
+          ;; initial `input` on units.
+          val-gradient-pairs (filter (fn [x]
+                                       (input-ids (first x)))
+                                     (merge-with (fn [x y]
+                                                   [x y]) 
+                                                 input gradients))
+          ;; aaab (clojure.pprint/pprint val-gradient-pairs)
+          new-input (reduce (fn [new-map v]
+                              (let [key (first v)
+                                    value (first (second v))
+                                    gradient (second (second v))]
+                                (assoc new-map key
+                                       (+ value (* step gradient)))))
+                            {} val-gradient-pairs)
+          ;; aaae (clojure.pprint/pprint new-input)
+          new-values (forward neuron new-input)
+          val-neuron-old (values id-neuron)
+          val-neuron-new (new-values id-neuron)
+          better-threshold 0.0004
+          aaaf (clojure.pprint/pprint (- val-neuron-new val-neuron-old))]
+      (if (< (- val-neuron-new val-neuron-old) better-threshold)
+        val-neuron-new
+        (recur new-input)))))
+
+;; should be able to make better-output 
+;; with back-and-forward propagation.
+(> (make-better-value sigaxbyc initial-data) 
+   (forward sigaxbyc initial-data))
+;; ------------- *** ------------------------------
+
+;; so Above in make-better-value, we changed [a,b,c] and [x,y].
+;; where [a,b,c] were the coefficients and [x,y] were variables
+;; in f(x) = a*x + b*y + c
+
+;; In SVM, we only apply pull on [a,b,c].
+;; Also, we apply additional pull on [a,b] to take it towards 0.
+(defn svm [neuron initial-data]
+  ())
+
+
