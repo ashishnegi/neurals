@@ -314,7 +314,7 @@
 
 (defn svm-learn [times]
   (loop [t times 
-         input (map #(make-svm-input svm-init-data %1) xy-label-s)]
+         input (make-svm-input svm-init-data (first xy-label-s))]
     (if (< t 0)
       input
       (do
@@ -326,17 +326,21 @@
         ;;   (clojure.pprint/pprint (find-pull (:label data) label)))
 
         (recur (dec t) 
-               (map (fn [data]
-                      (assoc (svm-new-input svm-neuron 
+               (reduce (fn [new-input xy-label]
+                         (let [data (make-svm-input new-input xy-label)]
+                           (do         
+                             ;; (clojure.pprint/pprint data)
+                             (svm-new-input svm-neuron 
                                             data
                                             (:label data)
-                                            cal-input-ops)
-                             :label
-                             (:label data)))
-                    input))))))
+                                            cal-input-ops))))
+                       svm-init-data xy-label-s))))))
 
 (defn svm-accuracy [times]
   (->> (svm-learn times)
+       (repeat)
+       (map (fn [xy-label data]
+              (make-svm-input data xy-label)) xy-label-s)
        (map (fn [data] 
               (let [values (forward svm-neuron data)
                     id-neuron (:id svm-neuron)
