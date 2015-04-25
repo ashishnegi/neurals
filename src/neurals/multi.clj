@@ -314,7 +314,7 @@
 
 (defn svm-learn [times]
   (loop [t times 
-         input (make-svm-input svm-init-data (first xy-label-s))]
+         input (list (make-svm-input svm-init-data (first xy-label-s)))]
     (if (< t 0)
       input
       (do
@@ -324,9 +324,11 @@
         ;;                           (:id svm-neuron))]
         ;;   (clojure.pprint/pprint label)
         ;;   (clojure.pprint/pprint (find-pull (:label data) label)))
-
         (recur (dec t) 
-               (reduce (fn [new-input xy-label]
+               (concat  
+                     (reverse 
+                      (reductions 
+                       (fn [new-input xy-label]
                          (let [data (make-svm-input new-input xy-label)]
                            (do         
                              ;; (clojure.pprint/pprint data)
@@ -334,10 +336,13 @@
                                             data
                                             (:label data)
                                             cal-input-ops))))
-                       svm-init-data xy-label-s))))))
+                       (first input) xy-label-s))
+                     input))))))
 
+;; I am getting 100% accuracy even from 1st complete iteration.
+;; I think some problems are there..
 (defn svm-accuracy [times]
-  (->> (svm-learn times)
+  (->> (first (svm-learn times))
        (repeat)
        (map (fn [xy-label data]
               (make-svm-input data xy-label)) xy-label-s)
