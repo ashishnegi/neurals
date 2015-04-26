@@ -17,20 +17,34 @@
                    :name (name '~var-name)
                    :id ~id}))
 
-(defn addition-gate [gate-a gate-b]
+(defn addition-gate
+  "Makes a Add gate. Adds the output value of two gates."
+  [gate-a gate-b]
   {:type :add-gate
    :gate-a gate-a
    :gate-b gate-b
    :id (gensym "id")})
 
-(defn mul-gate [gate-a gate-b] 
+(defn mul-gate 
+  "Makes a Multiply Gate."
+  [gate-a gate-b] 
   {:type :mul-gate
    :gate-a gate-a
    :gate-b gate-b
    :id (gensym "id")})
 
-(defn sig-gate [gate-a]
+(defn sig-gate
+  "Makes the sigmoid gate."
+  [gate-a]
   {:type :sig-gate
+   :gate-a gate-a
+   :id (gensym "id")})
+
+(defn max0-gate
+  "Makes the max0-gate which outputs only positive values.
+  If input > 0, input is outputted, else 0."
+  [gate-a]
+  {:type :max0-gate
    :gate-a gate-a
    :id (gensym "id")})
 
@@ -38,10 +52,11 @@
   (op (forward (:gate-a this))
       (forward (:gate-b this))))
 
+;; define the forward for all the <:type> of gates.
 (defmethod forward :unit
   [this input-values]
   (let [id (:id this)]
-    (do (clojure.pprint/pprint {id (input-values id)})
+    (do ;; (clojure.pprint/pprint {id (input-values id)})
         {id (input-values id)})))
 
 (defmethod forward :add-gate
@@ -77,7 +92,22 @@
      val-a-map
      (assoc   id (core/sig (val-a-map (:id gate-a)))))))
 
+(defmethod forward :max0-gate
+  [this input-values]
+  (let [id (:id this)
+        gate-a (:gate-a this)
+        val-a-map (forward gate-a input-values)]
+    (-> val-a-map
+        (assoc   id (max (val-a-map (:id gate-a)) 0)))))
+
+;; ---- forward of gates done ---------
+
+;; define the backward on all gates.
 (defmethod backward :unit
+  [this back-grad values-gates]
+  {(:id this) back-grad})
+
+(defmethod backward :variable
   [this back-grad values-gates]
   {(:id this) back-grad})
 
@@ -109,6 +139,20 @@
      (backward gate-a (* s (- 1 s) back-grad) values-gates)
      (assoc  (:id this) back-grad))))
 
+(defmethod backward :max0-gate
+  [this back-grad values-gates]
+  (let [id (:id this)
+        gate-a (:gate-a this)
+        val-a (values-gates (:id gate-a))
+        val-b 0
+        a-gt-b (> val-a val-b)
+        pull-a (if a-gt-b 1 0)]
+    (-> (backward gate-a (* pull-a back-grad) values-gates)
+        (assoc id back-grad))))
+
+;; ----- backward on gates done. --------
+
+;; define the inputs on the gates.
 (defmethod inputs :unit
    [this]
    [this])
@@ -129,7 +173,14 @@
   [this]
   (conj (inputs (:gate-a this)) this))
 
-;; f(x,y) = a*x + b*y + c
+(defmethod inputs :max0-gate
+  [this]
+  (conj (inputs (:gate-a this)) this))
+
+;; ---- end : inputs on gates done. ------
+
+;; simple Neuron 
+;; f(x,y) = sig(a*x + b*y + c)
 
 (defunit a 0) ;; 0 is the id for a
 (defunit b 1)
@@ -141,7 +192,8 @@
 (def by (mul-gate b y ))
 (def axc (addition-gate ax c))
 (def axcby (addition-gate axc by))
-(def sigaxcby (sig-gate axcby))
+;; this is f(x,y)
+(def sigaxcby (sig-gate axcby)) 
 
 (def initial-data  {0 1.0
                     1 2.0
@@ -149,12 +201,6 @@
                     3 -1.0
                     4 3.0
                     })
-
-;; (clojure.pprint/pprint 
-;;  (backward sigaxcby 1.0 
-;;            ;; forward takes a map { unit-id  input-to-unit }
-;;            (forward sigaxcby initial-data)))
-
 
 ;; Plan 1 : DONE :)
 ;; Plan 2 : Also done :).
@@ -175,6 +221,7 @@
           ;; aaaa (clojure.pprint/pprint input-ids)
           ;; aaad (clojure.pprint/pprint values)
           ;; aaac (clojure.pprint/pprint gradients)
+
           ;; create new input from gradients on units, and 
           ;; initial `input` on units.
           val-gradient-pairs (filter (fn [x]
@@ -244,11 +291,12 @@
                     ;; otherwise calculate backward gradient.
                     (backward neuron pull values))
 
-        aaaa (clojure.pprint/pprint pull)
-        aaab (clojure.pprint/pprint label)
+        ;; aaaa (clojure.pprint/pprint pull)
+        ;; aaab (clojure.pprint/pprint label)
         ;; aaac (clojure.pprint/pprint input-ids)
         ;; aaad (clojure.pprint/pprint gradients)
-        aaae (clojure.pprint/pprint values)
+        ;; aaae (clojure.pprint/pprint values)
+        ;; aaaf (clojure.pprint/pprint input)
 
         ;; for each input-id, call its operation with
         ;; val,gradient,to-zero value of it.
@@ -349,10 +397,12 @@
          (do         
            ;; (clojure.pprint/pprint data)
            (conj new-input-list
-                 (svm-new-input neuron 
-                                data
-                                (:label data)
-                                cal-input-ops)))))
+                 (make-svm-input-op
+                  (svm-new-input neuron 
+                                 data
+                                 (:label data)
+                                 cal-input-ops)
+                  xy-label)))))
      (list input) random-xy-s)))
 
 
@@ -405,6 +455,10 @@
 ;; 2-layer Neural Network with 3 hidden neurons (n1, n2, n3) that
 ;; uses Rectified Linear Unit (ReLU) non-linearity 
 ;; on each hidden neuron
+;; f1(x,y) = max(0, a1*x + b1*y + c1)
+;; f2(x,y) = max(0, a2*x + b2*y + c2)
+;; f3(x,y) = max(0, a3*x + b3*y + c3)
+;; f(x,y)  = f1(x,y)*x + f2(x,y)*y + f3(x,y)*c + d
 (defunit x-0 1)
 (defunit y-0 2)
 
@@ -414,7 +468,7 @@
 (def a1x (mul-gate a-1 x-0))
 (def b1y (mul-gate b-1 y-0))
 (def a1xc (addition-gate a1x c-1))
-(def a1xcby (addition-gate a1xc b1y))
+(def a1xcby (max0-gate (addition-gate a1xc b1y))) ;; f1(x,y)
 
 (defunit a-2 6)
 (defunit b-2 7)
@@ -422,7 +476,7 @@
 (def a2x (mul-gate a-2 x-0))
 (def b2y (mul-gate b-2 y-0))
 (def a2xc (addition-gate a2x c-2))
-(def a2xcby (addition-gate a2xc b2y))
+(def a2xcby (max0-gate (addition-gate a2xc b2y))) ;; f2(x,y)
 
 (defunit a-3 9)
 (defunit b-3 10)
@@ -430,7 +484,7 @@
 (def a3x (mul-gate a-3 x-0))
 (def b3y (mul-gate b-3 y-0))
 (def a3xc (addition-gate a3x c-3))
-(def a3xcby (addition-gate a3xc b3y))
+(def a3xcby (max0-gate (addition-gate a3xc b3y))) ;; f3(x,y)
 
 (defunit a-4 12)
 (defunit b-4 13)
@@ -446,7 +500,7 @@
 (def c4z (mul-gate c-4 a3xcby))
 (def a4xb4y (addition-gate a4x b4y))
 (def a4xb4yc4z (addition-gate a4xb4y c4z))
-(def neuron-2-stage (addition-gate a4xb4yc4z d-4))
+(def neuron-2-stage (addition-gate a4xb4yc4z d-4)) ;; f(x,y)
 
 (defn make-svm-input-2-layer [coeff-ins xy-label]
   (merge coeff-ins {
@@ -473,19 +527,24 @@
                            })
 
 (clojure.pprint/pprint 
-  (svm-learn 1
+  (svm-accuracy 67
              neuron-2-stage
              (reduce (fn [x y]
-                       (assoc x y 0))
+                       (assoc x y (+ 0.5 (rand -1))))
                      {} (range 0 16))
              make-svm-input-2-layer
              cal-input-ops-neuron))
 
-; clojure.pprint/pprint 
-(svm-accuracy 2
-              svm-neuron 
-              (reduce (fn [x y]
-                        (assoc x y 0))
-                      {} (range 0 6))
-              make-svm-input
-              cal-input-ops)
+;; learned important thing that - 
+;; in svm-neuron since, c has + operator,
+;; it would be able to get non-zero gradient in first step.
+;; this would initiate the learning. however, in neuron-2-stage.
+;; having 0 initial values for all, would not progress the neuron.
+(clojure.pprint/pprint 
+  (svm-accuracy 2
+                svm-neuron 
+                (reduce (fn [x y]
+                          (assoc x y 0))
+                        {} (range 0 6))
+                make-svm-input
+                cal-input-ops))
