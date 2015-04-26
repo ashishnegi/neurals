@@ -41,7 +41,8 @@
 (defmethod forward :unit
   [this input-values]
   (let [id (:id this)]
-    {id (input-values id)}))
+    (do (clojure.pprint/pprint {id (input-values id)})
+        {id (input-values id)})))
 
 (defmethod forward :add-gate
   [this input-values]
@@ -149,14 +150,14 @@
                     4 3.0
                     })
 
-(clojure.pprint/pprint 
- (backward sigaxcby 1.0 
-           ;; forward takes a map { unit-id  input-to-unit }
-           (forward sigaxcby initial-data)))
+;; (clojure.pprint/pprint 
+;;  (backward sigaxcby 1.0 
+;;            ;; forward takes a map { unit-id  input-to-unit }
+;;            (forward sigaxcby initial-data)))
 
 
 ;; Plan 1 : DONE :)
-
+;; Plan 2 : Also done :).
 ;; ---------------- **** -----------------------------
 (defn make-better-value 
   "Keep generating new-values by pulling the circuit,
@@ -164,7 +165,7 @@
   [neuron, input]
   (loop [input input]
     (let [id-neuron (:id neuron)
-          aaaz (clojure.pprint/pprint input)
+          ;; aaaz (clojure.pprint/pprint input)
           values (forward neuron input)
           gradients (backward neuron 1.0 values)
           step 0.01
@@ -194,7 +195,8 @@
           val-neuron-old (values id-neuron)
           val-neuron-new (new-values id-neuron)
           better-threshold 0.0004
-          aaaf (clojure.pprint/pprint (- val-neuron-new val-neuron-old))]
+          ;; aaaf (clojure.pprint/pprint (- val-neuron-new val-neuron-old))
+          ]
       (if (< (- val-neuron-new val-neuron-old) better-threshold)
         val-neuron-new
         (recur new-input)))))
@@ -238,13 +240,15 @@
         
         gradients (if (zero? pull)
                     ;; fill the gradients with 0s.
-                    ;; (reduce (fn [x y] (assoc x y 0)) {} input-ids)
+                    (reduce (fn [x y] (assoc x y 0)) {} input-ids)
                     ;; otherwise calculate backward gradient.
-                    (backward neuron pull values)
                     (backward neuron pull values))
 
-        ;; aaaa (clojure.pprint/pprint gradients)
-        ;; aaab (clojure.pprint/pprint pull)
+        aaaa (clojure.pprint/pprint pull)
+        aaab (clojure.pprint/pprint label)
+        ;; aaac (clojure.pprint/pprint input-ids)
+        ;; aaad (clojure.pprint/pprint gradients)
+        aaae (clojure.pprint/pprint values)
 
         ;; for each input-id, call its operation with
         ;; val,gradient,to-zero value of it.
@@ -325,27 +329,27 @@
                     :label (nth xy-s 2)}))
 
 (defn svm-learn 
-  "Randomly learn the svm-neuron for times.
+  "Randomly learn the neuron for times.
   Data is xy-label-s."
-  [times]
+  [times neuron init-data make-svm-input-op cal-input-ops]
   (let [t times 
-        input (make-svm-input svm-init-data (first xy-label-s)) 
+        input init-data
         random-xy-s (repeatedly times #(rand-nth xy-label-s))]
     ;; (clojure.pprint/pprint input)
     ;; (let [data (first input)
-    ;;       label ((forward svm-neuron data) 
-    ;;                           (:id svm-neuron))]
+    ;;       label ((forward neuron data) 
+    ;;                           (:id neuron))]
     ;;   (clojure.pprint/pprint label)
     ;;   (clojure.pprint/pprint (find-pull (:label data) label)))
       
     (reduce
      (fn [new-input-list xy-label]
        (let [new-input (first new-input-list)
-             data (make-svm-input new-input xy-label)]
+             data (make-svm-input-op new-input xy-label)]
          (do         
            ;; (clojure.pprint/pprint data)
            (conj new-input-list
-                 (svm-new-input svm-neuron 
+                 (svm-new-input neuron 
                                 data
                                 (:label data)
                                 cal-input-ops)))))
@@ -353,15 +357,16 @@
 
 
 (defn svm-accuracy 
-  "Find the accuracy of the learning of svm-neuron."
-  [times]
-  (->> (first (svm-learn times))
+  "Find the accuracy of the learning of neuron."
+  [times neuron init-data make-svm-input-op cal-input-ops]
+  (->> (first (svm-learn times neuron init-data make-svm-input-op
+                         cal-input-ops))
        (repeat)
        (map (fn [xy-label data]
-              (make-svm-input data xy-label)) xy-label-s)
+              (make-svm-input-op data xy-label)) xy-label-s)
        (map (fn [data] 
-              (let [values (forward svm-neuron data)
-                    id-neuron (:id svm-neuron)
+              (let [values (forward neuron data)
+                    id-neuron (:id neuron)
                     val-neuron (values id-neuron)
                     label (:label data)]
                 (if (or  (and (> label 0)
@@ -380,13 +385,13 @@
                   :total (count learn)}
                  :learn learn)))))
 
-
 (defn find-pull 
   "Find pull for the svm.
   Argument label : label of input-data.
   Argument val-neuron : label generated from the circuit for input-data.
   Gives what should happen to the circuit for this val-neuron.
-  If we are deviating from label, then punish the circuit by pulling it in opposite direction."
+  If we are deviating from label, then punish the circuit by pulling it 
+  in opposite direction."
   [label val-neuron]
   (if (and (< label 0)
            (> val-neuron label))
@@ -395,3 +400,92 @@
              (< val-neuron label))
       1.0
       0)))
+
+;; ---------- **** -------------------------------------------------
+;; 2-layer Neural Network with 3 hidden neurons (n1, n2, n3) that
+;; uses Rectified Linear Unit (ReLU) non-linearity 
+;; on each hidden neuron
+(defunit x-0 1)
+(defunit y-0 2)
+
+(defunit a-1 3)
+(defunit b-1 4)
+(defunit c-1 5)
+(def a1x (mul-gate a-1 x-0))
+(def b1y (mul-gate b-1 y-0))
+(def a1xc (addition-gate a1x c-1))
+(def a1xcby (addition-gate a1xc b1y))
+
+(defunit a-2 6)
+(defunit b-2 7)
+(defunit c-2 8)
+(def a2x (mul-gate a-2 x-0))
+(def b2y (mul-gate b-2 y-0))
+(def a2xc (addition-gate a2x c-2))
+(def a2xcby (addition-gate a2xc b2y))
+
+(defunit a-3 9)
+(defunit b-3 10)
+(defunit c-3 11)
+(def a3x (mul-gate a-3 x-0))
+(def b3y (mul-gate b-3 y-0))
+(def a3xc (addition-gate a3x c-3))
+(def a3xcby (addition-gate a3xc b3y))
+
+(defunit a-4 12)
+(defunit b-4 13)
+(defunit c-4 14)
+(defunit d-4 15)
+
+;; Now x is a1xcby
+;;     y is a2xcby
+;;     z is a3xcby
+
+(def a4x (mul-gate a-4 a1xcby))
+(def b4y (mul-gate b-4 a2xcby))
+(def c4z (mul-gate c-4 a3xcby))
+(def a4xb4y (addition-gate a4x b4y))
+(def a4xb4yc4z (addition-gate a4xb4y c4z))
+(def neuron-2-stage (addition-gate a4xb4yc4z d-4))
+
+(defn make-svm-input-2-layer [coeff-ins xy-label]
+  (merge coeff-ins {
+                    1 (first xy-label)
+                    2 (second xy-label)
+                    :label (nth xy-label 2)}))
+
+(def cal-input-ops-neuron {
+                           1 cal-input-xy-op
+                           2 cal-input-xy-op
+                           3 cal-input-ab-op
+                           4 cal-input-ab-op
+                           5 cal-input-c-op
+                           6 cal-input-ab-op
+                           7 cal-input-ab-op
+                           8 cal-input-c-op
+                           9 cal-input-ab-op
+                           10 cal-input-ab-op
+                           11 cal-input-c-op
+                           12 cal-input-ab-op
+                           13 cal-input-ab-op
+                           14 cal-input-c-op
+                           15 cal-input-c-op
+                           })
+
+(clojure.pprint/pprint 
+  (svm-learn 1
+             neuron-2-stage
+             (reduce (fn [x y]
+                       (assoc x y 0))
+                     {} (range 0 16))
+             make-svm-input-2-layer
+             cal-input-ops-neuron))
+
+; clojure.pprint/pprint 
+(svm-accuracy 2
+              svm-neuron 
+              (reduce (fn [x y]
+                        (assoc x y 0))
+                      {} (range 0 6))
+              make-svm-input
+              cal-input-ops)
