@@ -158,7 +158,10 @@
 ;; Plan 1 : DONE :)
 
 ;; ---------------- **** -----------------------------
-(defn make-better-value [neuron, input]
+(defn make-better-value 
+  "Keep generating new-values by pulling the circuit,
+  untill we are not able to make any appreciable progress."
+  [neuron, input]
   (loop [input input]
     (let [id-neuron (:id neuron)
           aaaz (clojure.pprint/pprint input)
@@ -222,45 +225,45 @@
    6. to calculate new-values, find units and call new-val-calc-ops."
   ;; label -> {-1,1} only.
   [neuron initial-data label new-val-calc-ops]
-  (loop [input initial-data]
-    (let [values (forward neuron input)
-          id-neuron (:id neuron)
-          val-neuron (values id-neuron)
-          pull (find-pull label val-neuron)
-          
-          all-gates (inputs neuron)
-          ;; ids of the input (mouth) of circuit.
-          input-ids (set (map #(:id %1) 
-                              (filter #(= :unit (:type %1)) all-gates)))
-          
-          gradients (if (zero? pull)
-                      ;; fill the gradients with 0s.
-                      ;; (reduce (fn [x y] (assoc x y 0)) {} input-ids)
-                      ;; otherwise calculate backward gradient.
-                      (backward neuron pull values)
-                      (backward neuron pull values))
+  (let [input initial-data
+        values (forward neuron input)
+        id-neuron (:id neuron)
+        val-neuron (values id-neuron)
+        pull (find-pull label val-neuron)
+        
+        all-gates (inputs neuron)
+        ;; ids of the input (mouth) of circuit.
+        input-ids (set (map #(:id %1) 
+                            (filter #(= :unit (:type %1)) all-gates)))
+        
+        gradients (if (zero? pull)
+                    ;; fill the gradients with 0s.
+                    ;; (reduce (fn [x y] (assoc x y 0)) {} input-ids)
+                    ;; otherwise calculate backward gradient.
+                    (backward neuron pull values)
+                    (backward neuron pull values))
 
-          ;; aaaa (clojure.pprint/pprint gradients)
-          ;; aaab (clojure.pprint/pprint pull)
+        ;; aaaa (clojure.pprint/pprint gradients)
+        ;; aaab (clojure.pprint/pprint pull)
 
-          ;; for each input-id, call its operation with
-          ;; val,gradient,to-zero value of it.
-          ;; [a,b] should work on them.
-          ;; [c] should not work on to-zero.
-          ;; [x] should just not change itself.
-          step 0.01
-          new-input (reduce 
-                     (fn [new-map input-id]
-                       (let [op (new-val-calc-ops input-id)
-                             gradient-of-id (gradients input-id)
-                             tozero-of-id (- (input input-id))
-                             input-of-id (input input-id)]
-                         (assoc new-map input-id 
-                                (+ input-of-id (op step
-                                                   gradient-of-id
-                                                   tozero-of-id)))))
-                     {}  input-ids)]
-      new-input)))
+        ;; for each input-id, call its operation with
+        ;; val,gradient,to-zero value of it.
+        ;; [a,b] should work on them.
+        ;; [c] should not work on to-zero.
+        ;; [x] should just not change itself.
+        step 0.01
+        new-input (reduce 
+                   (fn [new-map input-id]
+                     (let [op (new-val-calc-ops input-id)
+                           gradient-of-id (gradients input-id)
+                           tozero-of-id (- (input input-id))
+                           input-of-id (input input-id)]
+                       (assoc new-map input-id 
+                              (+ input-of-id (op step
+                                                 gradient-of-id
+                                                 tozero-of-id)))))
+                   {}  input-ids)]
+    new-input))
 
 (defunit a1 0) ;; 0 is the id for a
 (defunit b1 1)
@@ -273,13 +276,19 @@
 (def ax-plus-c (addition-gate ax1 c1))
 (def svm-neuron (addition-gate ax-plus-c by1))
 
-(defn cal-input-ab-op [step grad tozero]
+(defn cal-input-ab-op 
+  "Operation for variable coefficient for generating new gradient."
+  [step grad tozero]
   (* step (+ grad tozero)))
 
-(defn cal-input-c-op [step grad tozero]
+(defn cal-input-c-op 
+  "Operation for constant coefficient."
+  [step grad tozero]
   (* step grad))
 
-(defn cal-input-xy-op [step grad tozero]
+(defn cal-input-xy-op 
+  "Operation for variables in svm. No change."
+  [step grad tozero]
   0)
 
 (def cal-input-ops {0 cal-input-ab-op
@@ -307,41 +316,45 @@
 ;; Question : why not change [x,y] ? of-course no point, since
 ;;            label depend upon them.
 
-(defn make-svm-input [coeff-ins xy-s]
+(defn make-svm-input 
+  "Make svm-input from coeff-data and value of [x,y].
+  [x,y]'s data is [3,4]."
+  [coeff-ins xy-s]
   (merge coeff-ins {3 (first xy-s)
                     4 (second xy-s)
                     :label (nth xy-s 2)}))
 
-(defn svm-learn [times]
-  (loop [t times 
-         input (list (make-svm-input svm-init-data (first xy-label-s)))]
-    (if (< t 0)
-      input
-      (do
-        ;; (clojure.pprint/pprint input)
-        ;; (let [data (first input)
-        ;;       label ((forward svm-neuron data) 
-        ;;                           (:id svm-neuron))]
-        ;;   (clojure.pprint/pprint label)
-        ;;   (clojure.pprint/pprint (find-pull (:label data) label)))
-        (recur (dec t) 
-               (concat  
-                     (reverse 
-                      (reductions 
-                       (fn [new-input xy-label]
-                         (let [data (make-svm-input new-input xy-label)]
-                           (do         
-                             ;; (clojure.pprint/pprint data)
-                             (svm-new-input svm-neuron 
-                                            data
-                                            (:label data)
-                                            cal-input-ops))))
-                       (first input) xy-label-s))
-                     input))))))
+(defn svm-learn 
+  "Randomly learn the svm-neuron for times.
+  Data is xy-label-s."
+  [times]
+  (let [t times 
+        input (make-svm-input svm-init-data (first xy-label-s)) 
+        random-xy-s (repeatedly times #(rand-nth xy-label-s))]
+    ;; (clojure.pprint/pprint input)
+    ;; (let [data (first input)
+    ;;       label ((forward svm-neuron data) 
+    ;;                           (:id svm-neuron))]
+    ;;   (clojure.pprint/pprint label)
+    ;;   (clojure.pprint/pprint (find-pull (:label data) label)))
+      
+    (reduce
+     (fn [new-input-list xy-label]
+       (let [new-input (first new-input-list)
+             data (make-svm-input new-input xy-label)]
+         (do         
+           ;; (clojure.pprint/pprint data)
+           (conj new-input-list
+                 (svm-new-input svm-neuron 
+                                data
+                                (:label data)
+                                cal-input-ops)))))
+     (list input) random-xy-s)))
 
-;; I am getting 100% accuracy even from 1st complete iteration.
-;; I think some problems are there..
-(defn svm-accuracy [times]
+
+(defn svm-accuracy 
+  "Find the accuracy of the learning of svm-neuron."
+  [times]
   (->> (first (svm-learn times))
        (repeat)
        (map (fn [xy-label data]
@@ -368,7 +381,13 @@
                  :learn learn)))))
 
 
-(defn find-pull [label val-neuron]
+(defn find-pull 
+  "Find pull for the svm.
+  Argument label : label of input-data.
+  Argument val-neuron : label generated from the circuit for input-data.
+  Gives what should happen to the circuit for this val-neuron.
+  If we are deviating from label, then punish the circuit by pulling it in opposite direction."
+  [label val-neuron]
   (if (and (< label 0)
            (> val-neuron label))
     -1.0
