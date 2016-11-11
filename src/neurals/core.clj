@@ -210,17 +210,24 @@ Backward calcuates the derivative for generating the backward pull."))
 (def by (->MultiplyGate 6 b y))
 (def axc (->AddGate 7 ax c))
 (def axcby (->AddGate 8 axc by))
-(def sigaxcby (->SigmoidGate 9 axcby ))
+(def sigaxcby (->SigmoidGate 9 axcby))
 
-(clojure.pprint/pprint 
- (backward sigaxcby 1.0 
-           ;; forward takes a map { unit-id  input-to-unit }
-           (forward sigaxcby {0 1.0
-                              1 2.0
-                              2 -3.0
-                              3 -1.0
-                              4 3.0
-                              })))
+(clojure.pprint/pprint
+  (let [init-values {0 1.0
+                     1 2.0
+                     2 -3.0
+                     3 -1.0
+                     4 3.0}]
+    (->> ;; forward takes a gate and map of{ unit-id  input-to-unit }
+      (forward sigaxcby init-values)
+      (backward sigaxcby 1.0)
+      (keep (fn [[k v]]
+             (when (init-values k)
+               [k (+ (init-values k) (* 0.01 v))])))
+      (into {})
+      (forward sigaxcby)
+      sort)))
+
+(sig (+ (* 1.0 -1.0) (* 2.0 3.0) -3.0))
 
 ;; --------------- *** ---------------------------
-
